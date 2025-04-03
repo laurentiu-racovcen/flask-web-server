@@ -53,12 +53,7 @@ class TaskRunner(Thread):
         self.thread_id = thread_id
         self.thread_pool = thread_pool
 
-    def state_mean(self, job_data):
-        # job_data contains the following fields: question, state, job_id
-        question = job_data['question']
-        state = job_data['state']
-        job_id = job_data['job_id']
-
+    def state_mean(self, question, state):
         # set the index as "Question"
         q_all = self.thread_pool.data_ingestor.csv_file.set_index('Question')
         q_only = q_all.loc[question]
@@ -78,71 +73,57 @@ class TaskRunner(Thread):
             state: sum(q_values_list) / float(len(q_values_list))
         }
 
-        # store the result in the "./results" directory
-        with open("./results/" + "out-" + str(job_id) + ".json", "w") as output_file:
-            json.dump(result_dict, output_file)
-        
-        # mark job as finished
-        with self.thread_pool.jobs_lock:
-            self.thread_pool.jobs[job_id] = "finished"
+        return result_dict
 
-    def states_mean(self, job_data):
-        # job_data contains the following fields: question, job_id
-        question = job_data['question']
-        job_id = job_data['job_id']
-
+    def get_question_states(self, question):
         # set the index as "Question"
         all_entries = self.thread_pool.data_ingestor.csv_file.set_index('Question')
         question_entries = all_entries.loc[question]
 
-        # extract all states names from "LocationDesc" column, without duplicates
-        states = list(set(question_entries["LocationDesc"]))
+        # extract all unique states names from "LocationDesc" column
+        return list(set(question_entries["LocationDesc"]))
 
-        # set the index as "LocationDesc"
-        question_entries = question_entries.set_index('LocationDesc')
-
+    def states_mean(self, question):
+        states = self.get_question_states(question)
         results_dict = {}
 
         for state in states:
-            # extract "Data_Value" column values
-            state_entries = question_entries.loc[state, "Data_Value"]
-
-            state_entries_values = state_entries.tolist()
-
-            print("state = " + state )
-            print(state_entries_values)
-
-            results_dict[state] = sum(state_entries_values) / float(len(state_entries_values))
+            state_result = self.state_mean(question, state)
+            results_dict.update(state_result)
 
         # sort the states results in ascending order
         sorted_results_dict = dict(sorted(results_dict.items(), key = lambda item : item[1]))
-
+        return sorted_results_dict
+    
+    def write_output_file(self, res, job_id):
         # store the result in the "./results" directory
         with open("./results/" + "out-" + str(job_id) + ".json", "w") as output_file:
-            json.dump(sorted_results_dict, output_file)
-        
-        # mark job as finished
+            json.dump(res, output_file)
+    
+    def mark_job_as_finished(self, job_id):
         with self.thread_pool.jobs_lock:
             self.thread_pool.jobs[job_id] = "finished"
 
     def execute_job(self, job):
         print("thread id = " + str(self.thread_id) + ", is executing the job: " + str(job))
         endpoint = job['endpoint']
+        job_id = job['job_id']
 
-        # remove the endpoint field, it's no longer in use
+        # remove the endpoint field, it's no longer useful
         del job['endpoint']
 
         print("endpoint is: " + endpoint)
         print("remaining data is: " + str(job))
 
-        # append job id as json parameter
-        param = {"job_id": self.thread_pool.job_counter}
-        job.update(param)
-
-        if endpoint == "states_mean":
-            self.states_mean(job)
-        elif endpoint == "state_mean":
-            self.state_mean(job)
+        if endpoint == "state_mean":
+            # job_data contains the following fields: question, state, job_id
+            result = self.state_mean(job['question'], job['state'])
+            self.write_output_file(result, job_id)
+            self.mark_job_as_finished(job_id)
+        elif endpoint == "states_mean":
+            result = self.states_mean(job['question'])
+            self.write_output_file(result, job_id)
+            self.mark_job_as_finished(job_id)
         # etc.
 
     def run(self):
