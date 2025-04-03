@@ -77,13 +77,7 @@ def states_mean_request():
     data = request.json
     print(f"Got POST request {data}")
 
-    # check if the server is shutting down
-    server_is_shutting_down = False
-    with webserver.tasks_runner.shutting_down_lock:
-        if webserver.tasks_runner.is_shutting_down:
-            server_is_shutting_down = True
-    
-    if server_is_shutting_down:
+    if server_is_shutting_down():
         return jsonify(
                 {
                     'status': 'error',
@@ -91,30 +85,9 @@ def states_mean_request():
                 }
             )
 
-    print(f"received the POST data: {data}")
-
-    # append api endpoint name as json parameter
-    data.update({"endpoint": "states_mean"})
-
-    # for storing the job_id of the json result
-    job_id = 0
-
+    # append the job to the queue
     try:
-        with webserver.tasks_runner.jobs_lock:
-            # increment the job counter
-            webserver.tasks_runner.job_counter += 1
-
-            job_id = webserver.tasks_runner.job_counter
-
-            # append job id as json parameter
-            data.update({"job_id": webserver.tasks_runner.job_counter})
-
-            # add current job in jobs dictionary and set it as "running"
-            webserver.tasks_runner.jobs[job_id] = "running"
-
-            # put the job in queue
-            webserver.tasks_runner.jobs_queue.put(data)
-
+        job_id = append_job(data, "states_mean")
         return jsonify(
                 {
                     'status': 'success',
@@ -134,13 +107,7 @@ def state_mean_request():
     data = request.json
     print(f"Got POST request {data}")
 
-    # check if the server is shutting down
-    server_is_shutting_down = False
-    with webserver.tasks_runner.shutting_down_lock:
-        if webserver.tasks_runner.is_shutting_down:
-            server_is_shutting_down = True
-    
-    if server_is_shutting_down:
+    if server_is_shutting_down():
         return jsonify(
                 {
                     'status': 'error',
@@ -148,31 +115,9 @@ def state_mean_request():
                 }
             )
 
-    print(f"(received the POST data: {data}")
-
-    # append api endpoint name as json parameter
-    param = {"endpoint": "state_mean"}
-    data.update(param)
-
-    # for storing the job_id of the json result
-    job_id = 0
-
+    # append the job to the queue
     try:
-        with webserver.tasks_runner.jobs_lock:
-            # increment the job counter
-            webserver.tasks_runner.job_counter += 1
-
-            job_id = webserver.tasks_runner.job_counter
-
-            # append job id as json parameter
-            data.update({"job_id": job_id})
-
-            # add current job in jobs dictionary and set it as "running"
-            webserver.tasks_runner.jobs[webserver.tasks_runner.job_counter] = "running"
-
-            # put the job in queue
-            webserver.tasks_runner.jobs_queue.put(data)
-
+        job_id = append_job(data, "state_mean")
         return jsonify(
                 {
                     'status': 'success',
@@ -188,88 +133,163 @@ def state_mean_request():
 
 @webserver.route('/api/best5', methods=['POST'])
 def best5_request():
-    # TODO
-    # Get request data
-    # Register job. Don't wait for task to finish
-    # Increment job_id counter
-    # Return associated job_id
+    # TODO: check if question is valid (exists in data_ingestor questions fields)
 
-    return jsonify({"status": "NotImplemented"})
+    # get request data
+    data = request.json
+    print(f"Got POST request {data}")
+
+    if server_is_shutting_down():
+        return jsonify(
+                {
+                    'status': 'error',
+                    'reason': 'shutting down'
+                }
+            )
+
+    # append the job to the queue
+    try:
+        job_id = append_job(data, "best5")
+        return jsonify(
+                {
+                    'status': 'success',
+                    'job_id': job_id
+                }
+            )
+    except:
+        return jsonify(
+                {
+                    'status': 'error: exception while putting the job in queue',
+                }
+            )
 
 @webserver.route('/api/worst5', methods=['POST'])
 def worst5_request():
-    # TODO
-    # Get request data
-    # Register job. Don't wait for task to finish
-    # Increment job_id counter
-    # Return associated job_id
+    # TODO: check if question is valid (exists in data_ingestor questions fields)
 
-    return jsonify({"status": "NotImplemented"})
+    # get request data
+    data = request.json
+    print(f"Got POST request {data}")
+
+    if server_is_shutting_down():
+        return jsonify(
+                {
+                    'status': 'error',
+                    'reason': 'shutting down'
+                }
+            )
+
+    # append the job to the queue
+    try:
+        job_id = append_job(data, "worst5")
+        return jsonify(
+                {
+                    'status': 'success',
+                    'job_id': job_id
+                }
+            )
+    except:
+        return jsonify(
+                {
+                    'status': 'error: exception while putting the job in queue',
+                }
+            )
 
 @webserver.route('/api/global_mean', methods=['POST'])
 def global_mean_request():
-    # TODO check:
-    # if the threadpool variable "is_shutting_down" is True, send "shutting down" status message
-    with webserver.tasks_runner.shutting_down_lock:
-        if webserver.tasks_runner.is_shutting_down:
-            return jsonify(
+    # TODO: check if question is valid (exists in data_ingestor questions fields)
+
+    # get request data
+    data = request.json
+    print(f"Got POST request {data}")
+
+    if server_is_shutting_down():
+        return jsonify(
                 {
-                    "status": "error",
-                    "reason": "shutting down"
+                    'status': 'error',
+                    'reason': 'shutting down'
                 }
             )
 
-    # TODO
-    # Get request data
-    # Register job. Don't wait for task to finish
-    # Increment job_id counter
-    # Return associated job_id
-
-
-
-    return jsonify({"status": "NotImplemented"})
+    # append the job to the queue
+    try:
+        job_id = append_job(data, "global_mean")
+        return jsonify(
+                {
+                    'status': 'success',
+                    'job_id': job_id
+                }
+            )
+    except:
+        return jsonify(
+                {
+                    'status': 'error: exception while putting the job in queue',
+                }
+            )
 
 @webserver.route('/api/diff_from_mean', methods=['POST'])   
 def diff_from_mean_request():
-    # TODO check:
-    # if the threadpool variable "is_shutting_down" is True, send "shutting down" status message
-    with webserver.tasks_runner.shutting_down_lock:
-        if webserver.tasks_runner.is_shutting_down:
-            return jsonify(
+    # TODO: check if question is valid (exists in data_ingestor questions fields)
+
+    # get request data
+    data = request.json
+    print(f"Got POST request {data}")
+
+    if server_is_shutting_down():
+        return jsonify(
                 {
-                    "status": "error",
-                    "reason": "shutting down"
+                    'status': 'error',
+                    'reason': 'shutting down'
                 }
             )
 
-    # TODO
-    # Get request data
-    # Register job. Don't wait for task to finish
-    # Increment job_id counter
-    # Return associated job_id
-
-    return jsonify({"status": "NotImplemented"})
+    # append the job to the queue
+    try:
+        job_id = append_job(data, "diff_from_mean")
+        return jsonify(
+                {
+                    'status': 'success',
+                    'job_id': job_id
+                }
+            )
+    except:
+        return jsonify(
+                {
+                    'status': 'error: exception while putting the job in queue',
+                }
+            )
 
 @webserver.route('/api/state_diff_from_mean', methods=['POST'])
 def state_diff_from_mean_request():
-    # TODO check:
-    # if the threadpool variable "is_shutting_down" is True, send "shutting down" status message
-    with webserver.tasks_runner.shutting_down_lock:
-        if webserver.tasks_runner.is_shutting_down:
-            return jsonify(
+    # TODO: check if question is valid (exists in data_ingestor questions fields)
+
+    # get request data
+    data = request.json
+    print(f"Got POST request {data}")
+
+    if server_is_shutting_down():
+        return jsonify(
                 {
-                    "status": "error",
-                    "reason": "shutting down"
+                    'status': 'error',
+                    'reason': 'shutting down'
                 }
             )
 
-    # TODO
-    # Get request data
-    # Register job. Don't wait for task to finish
-    # Increment job_id counter
-    # Return associated job_id
-
-    return jsonify({"status": "NotImplemented"})
+    # append the job to the queue
+    try:
+        job_id = append_job(data, "state_diff_from_mean")
+        return jsonify(
+                {
+                    'status': 'success',
+                    'job_id': job_id
+                }
+            )
+    except:
+        return jsonify(
+                {
+                    'status': 'error: exception while putting the job in queue',
+                }
+            )
 
 @webserver.route('/api/mean_by_category', methods=['POST'])
 def mean_by_category_request():
@@ -338,3 +358,35 @@ def get_defined_routes():
         methods = ', '.join(rule.methods)
         routes.append(f"Endpoint: \"{rule}\" Methods: \"{methods}\"")
     return routes
+
+# append a job to the queue
+def append_job(data, function_name):
+    # append api endpoint name as json parameter
+    param = {"endpoint": function_name}
+    data.update(param)
+
+    with webserver.tasks_runner.jobs_lock:
+        # increment the job counter
+        webserver.tasks_runner.job_counter += 1
+
+        job_id = webserver.tasks_runner.job_counter
+
+        # append job id as json parameter
+        data.update({"job_id": job_id})
+
+        # add current job in jobs dictionary and set it as "running"
+        webserver.tasks_runner.jobs[job_id] = "running"
+
+        # put the job in queue
+        webserver.tasks_runner.jobs_queue.put(data)
+
+        # return the corresponding job_id of the job
+        return job_id
+
+# check if the server is shutting down
+def server_is_shutting_down():
+    server_is_shutting_down = False
+    with webserver.tasks_runner.shutting_down_lock:
+        if webserver.tasks_runner.is_shutting_down:
+            server_is_shutting_down = True
+    return server_is_shutting_down

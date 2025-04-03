@@ -53,35 +53,31 @@ class TaskRunner(Thread):
         self.thread_id = thread_id
         self.thread_pool = thread_pool
 
-    def state_mean(self, question, state):
-        # set the index as "Question"
-        q_all = self.thread_pool.data_ingestor.csv_file.set_index('Question')
-        q_only = q_all.loc[question]
-
-        # set the index as "LocationDesc"
-        results_by_state = q_only.set_index('LocationDesc')
-
-        # extract "Data_Value" column values
-        results_by_state = results_by_state.loc[state, "Data_Value"]
-
-        print(results_by_state)
-        q_values_list = results_by_state.tolist()
-
-        print(q_values_list)
-
-        result_dict = {
-            state: sum(q_values_list) / float(len(q_values_list))
-        }
-
-        return result_dict
-
-    def get_question_states(self, question):
+    def get_questions_entries(self, question):
         # set the index as "Question"
         all_entries = self.thread_pool.data_ingestor.csv_file.set_index('Question')
-        question_entries = all_entries.loc[question]
+        return all_entries.loc[question]
+
+    def get_question_states(self, question):
+        question_entries = self.get_questions_entries(question)
 
         # extract all unique states names from "LocationDesc" column
         return list(set(question_entries["LocationDesc"]))
+
+    def state_mean(self, question, state):
+        question_entries = self.get_questions_entries(question)
+
+        # set the index as "LocationDesc"
+        results_by_state = question_entries.set_index('LocationDesc')
+
+        # extract all "Data_Value" column values corresponding to the state
+        state_values = results_by_state.loc[state, "Data_Value"].tolist()
+
+        result_dict = {
+            state: sum(state_values) / float(len(state_values))
+        }
+
+        return result_dict
 
     def states_mean(self, question):
         states = self.get_question_states(question)
@@ -104,6 +100,65 @@ class TaskRunner(Thread):
         with self.thread_pool.jobs_lock:
             self.thread_pool.jobs[job_id] = "finished"
 
+    def best5(self, question):
+        states_mean = self.states_mean(question)
+
+        if question in self.thread_pool.data_ingestor.questions_best_is_min:
+            # the results are already sorted ascendingly, return the first 5 entries
+            return dict(list(states_mean.items())[:5])
+        elif question in self.thread_pool.data_ingestor.questions_best_is_max:
+            last5_states = dict(list(states_mean.items())[-5:])
+
+            # sort the last 5 states descendingly by mean and return them
+            return dict(sorted(last5_states.items(), key = lambda item : item[1], reverse=True))
+        else:
+            raise Exception("best5 function has received an invalid question.")
+
+    def worst5(self, question):
+        states_mean = self.states_mean(question)
+
+        if question in self.thread_pool.data_ingestor.questions_best_is_min:
+            last5_states = dict(list(states_mean.items())[-5:])
+
+            # sort the last 5 states descendingly by mean and return them
+            return dict(sorted(last5_states.items(), key = lambda item : item[1], reverse=True))
+
+        elif question in self.thread_pool.data_ingestor.questions_best_is_max:
+            # the results are already sorted ascendingly, return the first 5 entries
+            return dict(list(states_mean.items())[:5])
+        else:
+            raise Exception("worst5 function has received an invalid question.")
+
+    def global_mean(self, question):
+        question_entries = self.get_questions_entries(question)
+
+        # extract all "Data_Value" column values
+        question_values = list(question_entries["Data_Value"])
+
+        result_dict = {
+            "global_mean": sum(question_values) / float(len(question_values))
+        }
+
+        return result_dict
+
+    def state_diff_from_mean(self, question, state):
+        global_mean = self.global_mean(question)["global_mean"]
+        state_mean = self.state_mean(question, state)[state]
+
+        return {state: global_mean - state_mean}
+
+    def diff_from_mean(self, question):
+        states_mean = self.states_mean(question)
+
+        result_dict = {}
+
+        for state in states_mean.keys():
+            state_diff_result = self.state_diff_from_mean(question, state)
+            result_dict.update(state_diff_result)
+           
+
+        return result_dict
+
     def execute_job(self, job):
         print("thread id = " + str(self.thread_id) + ", is executing the job: " + str(job))
         endpoint = job['endpoint']
@@ -124,6 +179,26 @@ class TaskRunner(Thread):
             result = self.states_mean(job['question'])
             self.write_output_file(result, job_id)
             self.mark_job_as_finished(job_id)
+        elif endpoint == "best5":
+            result = self.best5(job['question'])
+            self.write_output_file(result, job_id)
+            self.mark_job_as_finished(job_id)
+        elif endpoint == "worst5":
+            result = self.worst5(job['question'])
+            self.write_output_file(result, job_id)
+            self.mark_job_as_finished(job_id)
+        elif endpoint == "global_mean":
+            result = self.global_mean(job['question'])
+            self.write_output_file(result, job_id)
+            self.mark_job_as_finished(job_id)
+        elif endpoint == "state_diff_from_mean":
+            result = self.state_diff_from_mean(job['question'], job['state'])
+            self.write_output_file(result, job_id)
+            self.mark_job_as_finished(job_id)
+        elif endpoint == "diff_from_mean":
+            result = self.diff_from_mean(job['question'])
+            self.write_output_file(result, job_id)
+            self.mark_job_as_finished(job_id)
         # etc.
 
     def run(self):
@@ -137,7 +212,7 @@ class TaskRunner(Thread):
                 try:
                     self.execute_job(job)
                 except:
-                    print("There was an error executing the job.")
+                    print("There was an error executing the job with id = " + str(job['job_id']))
 
             # Repeat until graceful_shutdown
             # TODO
