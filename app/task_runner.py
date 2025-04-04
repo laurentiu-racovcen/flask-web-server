@@ -18,14 +18,6 @@ class ThreadPool:
         self.jobs = {}
         self.jobs_lock = Lock() # protects "job_counter" and "jobs" fields
 
-        # You must implement a ThreadPool of TaskRunners
-        # Your ThreadPool should check if an environment variable TP_NUM_OF_THREADS is defined
-        # If the env var is defined, that is the number of threads to be used by the thread pool
-        # Otherwise, you are to use what the hardware concurrency allows
-        # You are free to write your implementation as you see fit, but
-        # You must NOT:
-        #   * create more threads than the hardware concurrency allows
-        #   * recreate threads for each task
         # Note: the TP_NUM_OF_THREADS env var will be defined by the checker
         if os.environ.get('TP_NUM_OF_THREADS'):
             # the variable is defined
@@ -53,19 +45,23 @@ class TaskRunner(Thread):
         self.thread_id = thread_id
         self.thread_pool = thread_pool
 
-    def get_questions_entries(self, question):
+    def get_question_entries(self, question, entries):
         # set the index as "Question"
-        all_entries = self.thread_pool.data_ingestor.csv_file.set_index('Question')
-        return all_entries.loc[question]
+        question_entries = entries.set_index('Question')
+        return question_entries.loc[question]
 
-    def get_question_states(self, question):
-        question_entries = self.get_questions_entries(question)
+    def get_state_entries(self, state, entries):
+        # set the index as "LocationDesc"
+        all_entries = entries.set_index('LocationDesc')
+        return all_entries.loc[state]
 
+    def get_question_states(self, question, entries):
+        question_entries = self.get_question_entries(question, entries)
         # extract all unique states names from "LocationDesc" column
         return list(set(question_entries["LocationDesc"]))
 
     def state_mean(self, question, state):
-        question_entries = self.get_questions_entries(question)
+        question_entries = self.get_question_entries(question, self.thread_pool.data_ingestor.csv_file)
 
         # set the index as "LocationDesc"
         results_by_state = question_entries.set_index('LocationDesc')
@@ -80,21 +76,23 @@ class TaskRunner(Thread):
         return result_dict
 
     def states_mean(self, question):
-        states = self.get_question_states(question)
+        states = self.get_question_states(question, self.thread_pool.data_ingestor.csv_file)
         results_dict = {}
 
         for state in states:
             state_result = self.state_mean(question, state)
             results_dict.update(state_result)
 
-        # sort the states results in ascending order
+        # sort the states results in ascending order by values
         sorted_results_dict = dict(sorted(results_dict.items(), key = lambda item : item[1]))
         return sorted_results_dict
-    
+
     def write_output_file(self, res, job_id):
+        print("before")
         # store the result in the "./results" directory
         with open("./results/" + "out-" + str(job_id) + ".json", "w") as output_file:
             json.dump(res, output_file)
+        print("after")
     
     def mark_job_as_finished(self, job_id):
         with self.thread_pool.jobs_lock:
@@ -130,7 +128,7 @@ class TaskRunner(Thread):
             raise Exception("worst5 function has received an invalid question.")
 
     def global_mean(self, question):
-        question_entries = self.get_questions_entries(question)
+        question_entries = self.get_question_entries(question, self.thread_pool.data_ingestor.csv_file)
 
         # extract all "Data_Value" column values
         question_values = list(question_entries["Data_Value"])
@@ -155,9 +153,76 @@ class TaskRunner(Thread):
         for state in states_mean.keys():
             state_diff_result = self.state_diff_from_mean(question, state)
             result_dict.update(state_diff_result)
-           
 
         return result_dict
+    
+    def get_stratification_category_entries(self, category, entries):
+        return entries[entries["StratificationCategory1"] == category]
+
+    def get_stratification_entries(self, stratification, entries):
+        return entries[entries["Stratification1"] == stratification]
+
+    def get_categories_names(self, entries):
+        if (not entries.empty) and ("StratificationCategory1" in entries.columns):
+            return entries["StratificationCategory1"].dropna().unique().tolist()
+
+        # there are no entries or is no "StratificationCategory1" column
+        return []
+
+    def get_stratifications_names(self, entries):
+        if (not entries.empty) and ("Stratification1" in entries.columns):
+            return entries["Stratification1"].dropna().unique().tolist()
+
+        # there are no entries or is no "Stratification1" column
+        return []
+    
+    def get_stratification_mean(self, stratification, entries):
+        str_entries = self.get_stratification_entries(stratification, entries)
+
+        # extract all "Data_Value" column values
+        data_values = list(str_entries["Data_Value"])
+
+        # compute the mean of data values
+        str_mean = sum(data_values) / float(len(data_values))
+
+        return {stratification: str_mean}
+
+    def state_mean_by_category(self, question, state):
+        question_entries = self.get_question_entries(question, self.thread_pool.data_ingestor.csv_file)
+        state_entries = self.get_state_entries(state, question_entries)
+
+        # extract all unique "StratificationCategory1" column values corresponding to the state
+        categories = self.get_categories_names(state_entries)
+
+        strat_cat_results = {}
+        for strat_cat in categories:
+            category_entries = self.get_stratification_category_entries(strat_cat, state_entries)
+
+            # extract all unique "Stratification1" column values corresponding to the current category
+            stratifications = self.get_stratifications_names(category_entries)
+
+            for stratification in stratifications:
+                strat_mean_result = self.get_stratification_mean(stratification, category_entries)
+                strat_cat_results.update(
+                    { "('" + strat_cat + "', '" + stratification + "')": strat_mean_result[stratification] }
+                )
+
+        # sort the results ascendingly by stratification name
+        strat_cat_results = dict(sorted(strat_cat_results.items()))
+
+        return {state: strat_cat_results}
+    
+    def mean_by_category(self, question):
+        states = self.get_question_states(question, self.thread_pool.data_ingestor.csv_file)
+        results_dict = {}
+
+        for state in states:
+            state_result = self.state_mean_by_category(question, state)
+            results_dict.update(state_result)
+
+        # sort the states results in ascending order by (category, stratification) key
+        sorted_results_dict = dict(sorted(results_dict.items()))
+        return sorted_results_dict
 
     def execute_job(self, job):
         print("thread id = " + str(self.thread_id) + ", is executing the job: " + str(job))
@@ -167,11 +232,7 @@ class TaskRunner(Thread):
         # remove the endpoint field, it's no longer useful
         del job['endpoint']
 
-        print("endpoint is: " + endpoint)
-        print("remaining data is: " + str(job))
-
         if endpoint == "state_mean":
-            # job_data contains the following fields: question, state, job_id
             result = self.state_mean(job['question'], job['state'])
             self.write_output_file(result, job_id)
             self.mark_job_as_finished(job_id)
@@ -199,22 +260,34 @@ class TaskRunner(Thread):
             result = self.diff_from_mean(job['question'])
             self.write_output_file(result, job_id)
             self.mark_job_as_finished(job_id)
-        # etc.
+        elif endpoint == "state_mean_by_category":
+            result = self.state_mean_by_category(job['question'], job['state'])
+            self.write_output_file(result, job_id)
+            self.mark_job_as_finished(job_id)
+        elif endpoint == "mean_by_category":
+            result = self.mean_by_category(job['question'])
+            self.write_output_file(result, job_id)
+            self.mark_job_as_finished(job_id)
+        else:
+            result = {
+                "status": "error",
+                "reason": "No such endpoint"
+            }
 
     def run(self):
         print("thread id = " + str(self.thread_id) + " has been initialized!")
         print(self.thread_pool.jobs_queue)
         while True:
-            # Get pending job
+            # get pending job
             if not self.thread_pool.jobs_queue.empty():
                 job = self.thread_pool.jobs_queue.get()
-                # Execute the job and save the result to disk
+                # execute the job and save the result to disk
                 try:
                     self.execute_job(job)
                 except:
                     print("There was an error executing the job with id = " + str(job['job_id']))
 
-            # Repeat until graceful_shutdown
+            # repeat until graceful_shutdown
             # TODO
             else:
                 with self.thread_pool.shutting_down_lock:
