@@ -1,7 +1,6 @@
 from queue import Queue
 from app.data_ingestor import DataIngestor
 from threading import Thread, Event, Lock
-import time
 import os
 import multiprocessing
 import json
@@ -88,15 +87,14 @@ class TaskRunner(Thread):
         return sorted_results_dict
 
     def write_output_file(self, res, job_id):
-        print("before")
         # store the result in the "./results" directory
         with open("./results/" + "out-" + str(job_id) + ".json", "w") as output_file:
             json.dump(res, output_file)
-        print("after")
     
     def mark_job_as_finished(self, job_id):
         with self.thread_pool.jobs_lock:
             self.thread_pool.jobs[job_id] = "finished"
+            print(f"thread id = {self.thread_id}, finished job {job_id}")
 
     def best5(self, question):
         states_mean = self.states_mean(question)
@@ -224,52 +222,42 @@ class TaskRunner(Thread):
         sorted_results_dict = dict(sorted(results_dict.items()))
         return sorted_results_dict
 
+    def get_job_output(self, function, job):
+        job_id = job['job_id']
+
+        result = {}
+        if ('question' in job) and ('state' in job):
+            result = function(job['question'], job['state'])
+        elif 'question' in job:
+            result = function(job['question'])
+
+        self.write_output_file(result, job_id)
+        self.mark_job_as_finished(job_id)
+        return result
+
     def execute_job(self, job):
         print("thread id = " + str(self.thread_id) + ", is executing the job: " + str(job))
         endpoint = job['endpoint']
-        job_id = job['job_id']
 
-        # remove the endpoint field, it's no longer useful
+        # remove the endpoint field from job dictionary, it's no longer useful
         del job['endpoint']
 
-        if endpoint == "state_mean":
-            result = self.state_mean(job['question'], job['state'])
-            self.write_output_file(result, job_id)
-            self.mark_job_as_finished(job_id)
-        elif endpoint == "states_mean":
-            result = self.states_mean(job['question'])
-            self.write_output_file(result, job_id)
-            self.mark_job_as_finished(job_id)
-        elif endpoint == "best5":
-            result = self.best5(job['question'])
-            self.write_output_file(result, job_id)
-            self.mark_job_as_finished(job_id)
-        elif endpoint == "worst5":
-            result = self.worst5(job['question'])
-            self.write_output_file(result, job_id)
-            self.mark_job_as_finished(job_id)
-        elif endpoint == "global_mean":
-            result = self.global_mean(job['question'])
-            self.write_output_file(result, job_id)
-            self.mark_job_as_finished(job_id)
-        elif endpoint == "state_diff_from_mean":
-            result = self.state_diff_from_mean(job['question'], job['state'])
-            self.write_output_file(result, job_id)
-            self.mark_job_as_finished(job_id)
-        elif endpoint == "diff_from_mean":
-            result = self.diff_from_mean(job['question'])
-            self.write_output_file(result, job_id)
-            self.mark_job_as_finished(job_id)
-        elif endpoint == "state_mean_by_category":
-            result = self.state_mean_by_category(job['question'], job['state'])
-            self.write_output_file(result, job_id)
-            self.mark_job_as_finished(job_id)
-        elif endpoint == "mean_by_category":
-            result = self.mean_by_category(job['question'])
-            self.write_output_file(result, job_id)
-            self.mark_job_as_finished(job_id)
+        endpoint_func_map = {
+            "state_mean": self.state_mean,
+            "states_mean": self.states_mean,
+            "best5": self.best5,
+            "worst5": self.worst5,
+            "global_mean": self.global_mean,
+            "state_diff_from_mean": self.state_diff_from_mean,
+            "diff_from_mean": self.diff_from_mean,
+            "state_mean_by_category": self.state_mean_by_category,
+            "mean_by_category": self.mean_by_category
+        }
+
+        if endpoint in endpoint_func_map:
+            return self.get_job_output(endpoint_func_map[endpoint], job)
         else:
-            result = {
+            return {
                 "status": "error",
                 "reason": "No such endpoint"
             }

@@ -19,5 +19,5 @@ class DataIngestor:
             'Percent of adults who engage in muscle-strengthening activities on 2 or more days a week',
         ]
 
-        # Read csv from csv_path
+        # read csv from csv_path
         self.csv_file = pandas.read_csv(csv_path)

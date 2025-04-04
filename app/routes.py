@@ -1,359 +1,126 @@
 from app import webserver
 from flask import request, jsonify
-
-import os
 import json
 
-# Example endpoint definition
-@webserver.route('/api/post_endpoint', methods=['POST'])
-def post_endpoint():
-    if request.method == 'POST':
-        # Assuming the request contains JSON data
-        data = request.json
+def process_post_request(function_name, data):
+    print(f"Got POST request: {data}")
 
-        # Process the received data
-        # For demonstration purposes, just echoing back the received data
-        response = {"message": "Received data successfully", "data": data}
+    if server_is_shutting_down():
+        return jsonify(
+                {
+                    'status': 'error',
+                    'reason': 'shutting down'
+                }
+            )
 
-        # Sending back a JSON response
-        return jsonify(response)
+    # append the job to the queue
+    try:
+        job_id = append_job(data, function_name)
+        return jsonify(
+                {
+                    'status': 'success',
+                    'job_id': job_id
+                }
+            )
+    except Exception as e:
+        print(f"Exception occured while checking putting the post request job in queue: {e}")
+        return jsonify(
+                {
+                    'status': 'error: exception while putting the post request job in queue'
+                }
+            )
+
+def get_job_result(job_id):
+    if webserver.tasks_runner.jobs[job_id] == "finished":
+        with open("./results/" + "out-" + str(job_id) + ".json") as job_data:
+            return jsonify(
+                {
+                    'status': 'done',
+                    'data': json.load(job_data)
+                }
+            )
+    elif webserver.tasks_runner.jobs[job_id] == "running":
+        return jsonify(
+            {
+                'status': 'running'
+            }
+        )
     else:
-        # Method Not Allowed
-        return jsonify({"error": "Method not allowed"}), 405
+        return jsonify(
+            {
+                'status': 'error',
+                'reason': 'unrecognized job state'
+            }
+        )
 
 @webserver.route('/api/get_results/<job_id>', methods=['GET'])
 def get_response(job_id):
     print(f"\nget_results function: received job_id = {job_id}")
 
-    # TODO: Check if job_id is valid
+    # TODO: do input validation
 
-    # convert job_id string to int
+    # convert job_id from string to int
     job_id = int(job_id)
 
     try:
+        job_result = {}
         # check the requested job state
         with webserver.tasks_runner.jobs_lock:
             print("current job list:")
-            # print(webserver.tasks_runner.jobs)
+            print(webserver.tasks_runner.jobs)
             if job_id in webserver.tasks_runner.jobs:
-                if webserver.tasks_runner.jobs[job_id] == "finished":
-                    with open("./results/" + "out-" + str(job_id) + ".json") as job_data:
-                        return jsonify(
-                            {
-                                'status': 'done',
-                                'data': json.load(job_data)
-                            }
-                        )
-                elif webserver.tasks_runner.jobs[job_id] == "running":
-                    return jsonify(
-                        {
-                            'status': 'running'
-                        }
-                    )
-                else:
-                    return jsonify(
-                        {
-                            'status': 'error',
-                            'reason': 'unrecognized job state'
-                        }
-                    )
+                job_result = get_job_result(job_id)
             else:
-                return jsonify(
+                job_result = jsonify(
                     {
                         'status': 'error',
-                        'reason': 'Invalid job_id'
+                        'reason': 'invalid job_id'
                     }
                 )
-    except:
+        return job_result
+    except Exception as e:
+        print(f"Exception occured while checking the job status: {e}")
         return jsonify(
                 {
-                    'status': 'error: exception while checking the job state'
+                    'status': 'error: exception while checking the job status'
                 }
             )
 
 @webserver.route('/api/states_mean', methods=['POST'])
 def states_mean_request():
-    # Get request data
-    data = request.json
-    print(f"Got POST request {data}")
-
-    if server_is_shutting_down():
-        return jsonify(
-                {
-                    'status': 'error',
-                    'reason': 'shutting down'
-                }
-            )
-
-    # append the job to the queue
-    try:
-        job_id = append_job(data, "states_mean")
-        return jsonify(
-                {
-                    'status': 'success',
-                    'job_id': job_id
-                }
-            )
-    except:
-        return jsonify(
-                {
-                    'status': 'error: exception while putting the job in queue',
-                }
-            )
+    return process_post_request("states_mean", request.json)
 
 @webserver.route('/api/state_mean', methods=['POST'])
 def state_mean_request():
-    # Get request data
-    data = request.json
-    print(f"Got POST request {data}")
-
-    if server_is_shutting_down():
-        return jsonify(
-                {
-                    'status': 'error',
-                    'reason': 'shutting down'
-                }
-            )
-
-    # append the job to the queue
-    try:
-        job_id = append_job(data, "state_mean")
-        return jsonify(
-                {
-                    'status': 'success',
-                    'job_id': job_id
-                }
-            )
-    except:
-        return jsonify(
-                {
-                    'status': 'error: exception while putting the job in queue',
-                }
-            )
+    return process_post_request("state_mean", request.json)
 
 @webserver.route('/api/best5', methods=['POST'])
 def best5_request():
-    # TODO: check if question is valid (exists in data_ingestor questions fields)
-
-    # get request data
-    data = request.json
-    print(f"Got POST request {data}")
-
-    if server_is_shutting_down():
-        return jsonify(
-                {
-                    'status': 'error',
-                    'reason': 'shutting down'
-                }
-            )
-
-    # append the job to the queue
-    try:
-        job_id = append_job(data, "best5")
-        return jsonify(
-                {
-                    'status': 'success',
-                    'job_id': job_id
-                }
-            )
-    except:
-        return jsonify(
-                {
-                    'status': 'error: exception while putting the job in queue',
-                }
-            )
+    return process_post_request("best5", request.json)
 
 @webserver.route('/api/worst5', methods=['POST'])
 def worst5_request():
-    # TODO: check if question is valid (exists in data_ingestor questions fields)
-
-    # get request data
-    data = request.json
-    print(f"Got POST request {data}")
-
-    if server_is_shutting_down():
-        return jsonify(
-                {
-                    'status': 'error',
-                    'reason': 'shutting down'
-                }
-            )
-
-    # append the job to the queue
-    try:
-        job_id = append_job(data, "worst5")
-        return jsonify(
-                {
-                    'status': 'success',
-                    'job_id': job_id
-                }
-            )
-    except:
-        return jsonify(
-                {
-                    'status': 'error: exception while putting the job in queue',
-                }
-            )
+    return process_post_request("worst5", request.json)
 
 @webserver.route('/api/global_mean', methods=['POST'])
 def global_mean_request():
-    # TODO: check if question is valid (exists in data_ingestor questions fields)
-
-    # get request data
-    data = request.json
-    print(f"Got POST request {data}")
-
-    if server_is_shutting_down():
-        return jsonify(
-                {
-                    'status': 'error',
-                    'reason': 'shutting down'
-                }
-            )
-
-    # append the job to the queue
-    try:
-        job_id = append_job(data, "global_mean")
-        return jsonify(
-                {
-                    'status': 'success',
-                    'job_id': job_id
-                }
-            )
-    except:
-        return jsonify(
-                {
-                    'status': 'error: exception while putting the job in queue',
-                }
-            )
+    return process_post_request("global_mean", request.json)
 
 @webserver.route('/api/diff_from_mean', methods=['POST'])   
 def diff_from_mean_request():
-    # TODO: check if question is valid (exists in data_ingestor questions fields)
-
-    # get request data
-    data = request.json
-    print(f"Got POST request {data}")
-
-    if server_is_shutting_down():
-        return jsonify(
-                {
-                    'status': 'error',
-                    'reason': 'shutting down'
-                }
-            )
-
-    # append the job to the queue
-    try:
-        job_id = append_job(data, "diff_from_mean")
-        return jsonify(
-                {
-                    'status': 'success',
-                    'job_id': job_id
-                }
-            )
-    except:
-        return jsonify(
-                {
-                    'status': 'error: exception while putting the job in queue',
-                }
-            )
+    return process_post_request("diff_from_mean", request.json)
 
 @webserver.route('/api/state_diff_from_mean', methods=['POST'])
 def state_diff_from_mean_request():
-    # TODO: check if question is valid (exists in data_ingestor questions fields)
-
-    # get request data
-    data = request.json
-    print(f"Got POST request {data}")
-
-    if server_is_shutting_down():
-        return jsonify(
-                {
-                    'status': 'error',
-                    'reason': 'shutting down'
-                }
-            )
-
-    # append the job to the queue
-    try:
-        job_id = append_job(data, "state_diff_from_mean")
-        return jsonify(
-                {
-                    'status': 'success',
-                    'job_id': job_id
-                }
-            )
-    except:
-        return jsonify(
-                {
-                    'status': 'error: exception while putting the job in queue',
-                }
-            )
+    return process_post_request("state_diff_from_mean", request.json)
 
 @webserver.route('/api/mean_by_category', methods=['POST'])
 def mean_by_category_request():
-    # TODO: check if question is valid (exists in data_ingestor questions fields)
-
-    # get request data
-    data = request.json
-    print(f"Got POST request {data}")
-
-    if server_is_shutting_down():
-        return jsonify(
-                {
-                    'status': 'error',
-                    'reason': 'shutting down'
-                }
-            )
-
-    # append the job to the queue
-    try:
-        job_id = append_job(data, "mean_by_category")
-        return jsonify(
-                {
-                    'status': 'success',
-                    'job_id': job_id
-                }
-            )
-    except:
-        return jsonify(
-                {
-                    'status': 'error: exception while putting the job in queue',
-                }
-            )
+    return process_post_request("mean_by_category", request.json)
 
 @webserver.route('/api/state_mean_by_category', methods=['POST'])
 def state_mean_by_category_request():
-    # TODO: check if question is valid (exists in data_ingestor questions fields)
-
-    # get request data
-    data = request.json
-    print(f"Got POST request {data}")
-
-    if server_is_shutting_down():
-        return jsonify(
-                {
-                    'status': 'error',
-                    'reason': 'shutting down'
-                }
-            )
-
-    # append the job to the queue
-    try:
-        job_id = append_job(data, "state_mean_by_category")
-        return jsonify(
-                {
-                    'status': 'success',
-                    'job_id': job_id
-                }
-            )
-    except:
-        return jsonify(
-                {
-                    'status': 'error: exception while putting the job in queue',
-                }
-            )
+    return process_post_request("state_mean_by_category", request.json)
 
 # TODO
 @webserver.route('/api/graceful_shutdown', methods=['GET'])
@@ -381,14 +148,13 @@ def graceful_shutdown():
         }
     )
 
-# You can check localhost in your browser to see what this displays
 @webserver.route('/')
 @webserver.route('/index')
 def index():
     routes = get_defined_routes()
     msg = f"Hello, World!\n Interact with the webserver using one of the defined routes:\n"
 
-    # Display each route as a separate HTML <p> tag
+    # display each route as a separate HTML <p> tag
     paragraphs = ""
     for route in routes:
         paragraphs += f"<p>{route}</p>"
