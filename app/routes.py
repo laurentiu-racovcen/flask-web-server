@@ -1,11 +1,12 @@
-from app import webserver
-from flask import request, jsonify
 import json
+from flask import request, jsonify
+from app import webserver
+from .utils import JobStatus
 
-def process_post_request(function_name, data):
-    print(f"Got POST request: {data}")
+def process_post_request(function_name: str, data: dict):
+    # print(f"Got POST request: {data}")
 
-    if server_is_shutting_down():
+    if webserver.tasks_runner.shutdown_event.is_set():
         return jsonify(
                 {
                     'status': 'error',
@@ -22,7 +23,14 @@ def process_post_request(function_name, data):
                     'job_id': job_id
                 }
             )
-    except Exception as e:
+    except KeyError as e:
+        print(f"Exception occured while checking putting the post request job in queue: {e}")
+        return jsonify(
+                {
+                    'status': 'error: exception while putting the post request job in queue'
+                }
+            )
+    except TypeError as e:
         print(f"Exception occured while checking putting the post request job in queue: {e}")
         return jsonify(
                 {
@@ -31,15 +39,16 @@ def process_post_request(function_name, data):
             )
 
 def get_job_result(job_id):
-    if webserver.tasks_runner.jobs[job_id] == "finished":
-        with open("./results/" + "out-" + str(job_id) + ".json") as job_data:
+    if webserver.tasks_runner.jobs[job_id] == JobStatus.DONE:
+        file_name = "./results/" + "out-" + str(job_id) + ".json"
+        with open(file_name, "r", encoding="utf-8") as job_data:
             return jsonify(
                 {
                     'status': 'done',
                     'data': json.load(job_data)
                 }
             )
-    elif webserver.tasks_runner.jobs[job_id] == "running":
+    elif webserver.tasks_runner.jobs[job_id] == JobStatus.RUNNING:
         return jsonify(
             {
                 'status': 'running'
@@ -55,7 +64,7 @@ def get_job_result(job_id):
 
 @webserver.route('/api/get_results/<job_id>', methods=['GET'])
 def get_response(job_id):
-    print(f"\nget_results function: received job_id = {job_id}")
+    # print(f"\nget_results function: received job_id = {job_id}")
 
     # TODO: do input validation
 
@@ -66,8 +75,8 @@ def get_response(job_id):
         job_result = {}
         # check the requested job state
         with webserver.tasks_runner.jobs_lock:
-            print("current job list:")
-            print(webserver.tasks_runner.jobs)
+            # print("current job list:")
+            # print(webserver.tasks_runner.jobs)
             if job_id in webserver.tasks_runner.jobs:
                 job_result = get_job_result(job_id)
             else:
@@ -78,13 +87,54 @@ def get_response(job_id):
                     }
                 )
         return job_result
-    except Exception as e:
+    except KeyError as e:
         print(f"Exception occured while checking the job status: {e}")
         return jsonify(
                 {
                     'status': 'error: exception while checking the job status'
                 }
             )
+    except TypeError as e:
+        print(f"Exception occured while checking the job status: {e}")
+        return jsonify(
+            {
+                'status': 'error: exception while checking the job status'
+            }
+        )
+
+@webserver.route('/api/jobs', methods=['GET'])
+def get_jobs_status():
+    jobs = {}
+    with webserver.tasks_runner.jobs_lock:
+        jobs = webserver.tasks_runner.jobs
+
+    result = {}
+    # convert enum values into strings
+    for key, value in jobs.items():
+        if value == JobStatus.RUNNING:
+            result[key] = "running"
+        elif value == JobStatus.DONE:
+            result[key] = "done"
+
+    return jsonify(
+        {
+            'status': "done",
+            "data": result
+        }
+    )
+
+@webserver.route('/api/num_jobs', methods=['GET'])
+def get_num_jobs():
+    done_jobs_counter = 0
+    with webserver.tasks_runner.done_jobs_counter_lock:
+        done_jobs_counter = webserver.tasks_runner.done_jobs_counter
+
+    return jsonify(
+        {
+            'status': "done",
+            "data": webserver.tasks_runner.job_counter - done_jobs_counter
+        }
+    )
 
 @webserver.route('/api/states_mean', methods=['POST'])
 def states_mean_request():
@@ -106,7 +156,7 @@ def worst5_request():
 def global_mean_request():
     return process_post_request("global_mean", request.json)
 
-@webserver.route('/api/diff_from_mean', methods=['POST'])   
+@webserver.route('/api/diff_from_mean', methods=['POST'])
 def diff_from_mean_request():
     return process_post_request("diff_from_mean", request.json)
 
@@ -122,13 +172,10 @@ def mean_by_category_request():
 def state_mean_by_category_request():
     return process_post_request("state_mean_by_category", request.json)
 
-# TODO
 @webserver.route('/api/graceful_shutdown', methods=['GET'])
 def graceful_shutdown():
-    with webserver.tasks_runner.shutting_down_lock:
-        if not webserver.tasks_runner.is_shutting_down:
-            print(f"setting 'is_shutting_down' to True...")
-            webserver.tasks_runner.is_shutting_down = True
+    print("setting 'is_shutting_down' to True...")
+    webserver.tasks_runner.shutdown_event.set()
 
     # the queue is not empty
     if not webserver.tasks_runner.jobs_queue.empty():
@@ -138,8 +185,7 @@ def graceful_shutdown():
             }
         )
 
-    # TODO: perform graceful shutdown of the server
-    # os._exit(0)
+    print("The server has been shut down successfully.")
 
     # the queue is empty
     return jsonify(
@@ -152,7 +198,7 @@ def graceful_shutdown():
 @webserver.route('/index')
 def index():
     routes = get_defined_routes()
-    msg = f"Hello, World!\n Interact with the webserver using one of the defined routes:\n"
+    msg = "Hello, World!\n Interact with the webserver using one of the defined routes:\n"
 
     # display each route as a separate HTML <p> tag
     paragraphs = ""
@@ -170,33 +216,26 @@ def get_defined_routes():
     return routes
 
 # append a job to the queue
-def append_job(data, function_name):
+def append_job(data: dict, function_name: str) -> int:
     # append api endpoint name as json parameter
     param = {"endpoint": function_name}
     data.update(param)
 
+    # increment the job counter
+    webserver.tasks_runner.job_counter += 1
+
+    # get current job id
+    job_id = webserver.tasks_runner.job_counter
+
+    # append the job id as dictionary parameter
+    data.update({"job_id": job_id})
+
     with webserver.tasks_runner.jobs_lock:
-        # increment the job counter
-        webserver.tasks_runner.job_counter += 1
-
-        job_id = webserver.tasks_runner.job_counter
-
-        # append job id as json parameter
-        data.update({"job_id": job_id})
-
         # add current job in jobs dictionary and set it as "running"
-        webserver.tasks_runner.jobs[job_id] = "running"
+        webserver.tasks_runner.jobs[job_id] = JobStatus.RUNNING
 
-        # put the job in queue
-        webserver.tasks_runner.jobs_queue.put(data)
+    # append the job to the queue
+    webserver.tasks_runner.jobs_queue.put(data)
 
-        # return the corresponding job_id of the job
-        return job_id
-
-# check if the server is shutting down
-def server_is_shutting_down():
-    server_is_shutting_down = False
-    with webserver.tasks_runner.shutting_down_lock:
-        if webserver.tasks_runner.is_shutting_down:
-            server_is_shutting_down = True
-    return server_is_shutting_down
+    # return the corresponding job_id of the job
+    return job_id
