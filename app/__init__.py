@@ -1,10 +1,9 @@
 import os
-from flask import Flask
-from app.data_ingestor import DataIngestor
-from app.task_runner import ThreadPool
+import time
 import logging
 from logging.handlers import RotatingFileHandler
-import time
+from flask import Flask
+from app.task_runner import ThreadPool
 
 if not os.path.exists('results'):
     os.mkdir('results')
