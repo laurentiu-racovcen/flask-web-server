@@ -4,68 +4,63 @@ from app import webserver
 from .utils import JobStatus
 
 def process_post_request(function_name: str, data: dict):
-    # print(f"Got POST request: {data}")
+    webserver.logger.info(f"\"POST /api/{function_name}\" - \"Received data: {data}\"")
 
     if webserver.tasks_runner.shutdown_event.is_set():
-        return jsonify(
-                {
-                    'status': 'error',
-                    'reason': 'shutting down'
-                }
-            )
+        response = {
+            'status': 'error',
+            'reason': 'shutting down'
+        }
+        webserver.logger.info(f"\"POST /api/{function_name}\" - \"Responding with: {response}\"")
+        return jsonify(response)
 
     # append the job to the queue
     try:
         job_id = append_job(data, function_name)
-        return jsonify(
-                {
-                    'status': 'success',
-                    'job_id': job_id
-                }
-            )
+        response = {
+            'status': 'success',
+            'job_id': job_id
+        }
+        webserver.logger.info(f"\"POST /api/{function_name}\" - \"Responding with: {response}\"")
+        return jsonify(response)
+
     except KeyError as e:
-        print(f"Exception occured while checking putting the post request job in queue: {e}")
-        return jsonify(
-                {
-                    'status': 'error: exception while putting the post request job in queue'
-                }
-            )
+        webserver.logger.exception(f"Exception occured while appending the post request job to the queue: {e}")
+        response = {
+            'status': 'error: exception while putting the post request job in queue'
+        }
+        webserver.logger.info(f"\"POST /api/{function_name}\" - \"Responding with: {response}\"")
+        return jsonify(response)
+
     except TypeError as e:
-        print(f"Exception occured while checking putting the post request job in queue: {e}")
-        return jsonify(
-                {
-                    'status': 'error: exception while putting the post request job in queue'
-                }
-            )
+        webserver.logger.exception(f"Exception occured while appending the post request job to the queue: {e}")
+        response = {
+            'status': 'error: exception while putting the post request job in queue'
+        }
+        webserver.logger.info(f"\"POST /api/{function_name}\" - \"Responding with: {response}\"")
+        return jsonify(response)
 
 def get_job_result(job_id):
     if webserver.tasks_runner.jobs[job_id] == JobStatus.DONE:
         file_name = "./results/" + "out-" + str(job_id) + ".json"
         with open(file_name, "r", encoding="utf-8") as job_data:
-            return jsonify(
-                {
-                    'status': 'done',
-                    'data': json.load(job_data)
-                }
-            )
+            return {
+                'status': 'done',
+                'data': json.load(job_data)
+            }
     elif webserver.tasks_runner.jobs[job_id] == JobStatus.RUNNING:
-        return jsonify(
-            {
-                'status': 'running'
-            }
-        )
+        return {
+            'status': 'running'
+        }
     else:
-        return jsonify(
-            {
-                'status': 'error',
-                'reason': 'unrecognized job state'
-            }
-        )
+        return {
+            'status': 'error',
+            'reason': 'unrecognized job state'
+        }
 
 @webserver.route('/api/get_results/<job_id>', methods=['GET'])
 def get_response(job_id):
-    # print(f"\nget_results function: received job_id = {job_id}")
-
+    webserver.logger.info(f"\"GET /api/get_results/{job_id}\"")
     # TODO: do input validation
 
     # convert job_id from string to int
@@ -80,30 +75,33 @@ def get_response(job_id):
             if job_id in webserver.tasks_runner.jobs:
                 job_result = get_job_result(job_id)
             else:
-                job_result = jsonify(
-                    {
-                        'status': 'error',
-                        'reason': 'invalid job_id'
-                    }
-                )
-        return job_result
-    except KeyError as e:
-        print(f"Exception occured while checking the job status: {e}")
-        return jsonify(
-                {
-                    'status': 'error: exception while checking the job status'
+                job_result = {
+                    'status': 'error',
+                    'reason': 'invalid job_id'
                 }
-            )
+
+        webserver.logger.info(f"\"GET /api/get_results/{job_id}\" - \"Responding with: {job_result}\"")
+        return jsonify(job_result)
+
+    except KeyError as e:
+        webserver.logger.info(f"Exception occured while checking the job status: {e}")
+        response = {
+            'status': 'error: exception while checking the job status'
+        }
+        webserver.logger.info(f"\"GET /api/get_results/{job_id}\" - \"Responding with: {response}\"")
+        return jsonify(response)
+
     except TypeError as e:
-        print(f"Exception occured while checking the job status: {e}")
-        return jsonify(
-            {
-                'status': 'error: exception while checking the job status'
-            }
-        )
+        webserver.logger.info(f"Exception occured while checking the job status: {e}")
+        response = {
+            'status': 'error: exception while checking the job status'
+        }
+        webserver.logger.info(f"\"GET /api/get_results/{job_id}\" - \"Responding with: {response}\"")
+        return jsonify(response)
 
 @webserver.route('/api/jobs', methods=['GET'])
 def get_jobs_status():
+    webserver.logger.info(f"\"GET /api/jobs\"")
     jobs = {}
     with webserver.tasks_runner.jobs_lock:
         jobs = webserver.tasks_runner.jobs
@@ -116,25 +114,29 @@ def get_jobs_status():
         elif value == JobStatus.DONE:
             result[key] = "done"
 
-    return jsonify(
-        {
-            'status': "done",
-            "data": result
-        }
-    )
+    response = {
+        'status': "done",
+        "data": result
+    }
+
+    webserver.logger.info(f"\"GET /api/jobs\" - \"Responding with: {response}\"")
+    return jsonify(response)
 
 @webserver.route('/api/num_jobs', methods=['GET'])
 def get_num_jobs():
+    webserver.logger.info(f"\"GET /api/num_jobs\"")
     done_jobs_counter = 0
+
     with webserver.tasks_runner.done_jobs_counter_lock:
         done_jobs_counter = webserver.tasks_runner.done_jobs_counter
 
-    return jsonify(
-        {
+    response = {
             'status': "done",
             "data": webserver.tasks_runner.job_counter - done_jobs_counter
         }
-    )
+
+    webserver.logger.info(f"\"GET /api/jobs\" - \"Responding with: {response}\"")
+    return jsonify(response)
 
 @webserver.route('/api/states_mean', methods=['POST'])
 def states_mean_request():
@@ -174,29 +176,32 @@ def state_mean_by_category_request():
 
 @webserver.route('/api/graceful_shutdown', methods=['GET'])
 def graceful_shutdown():
-    print("setting 'is_shutting_down' to True...")
+    webserver.logger.info(f"\"GET /api/graceful_shutdown\"")
     webserver.tasks_runner.shutdown_event.set()
 
     # the queue is not empty
     if not webserver.tasks_runner.jobs_queue.empty():
-        return jsonify(
-            {
-                "status": "running",
-            }
-        )
+        response = {
+            "status": "running",
+        }
+
+        webserver.logger.info(f"\"GET /graceful_shutdown\" - \"Responding with: {response}\"")
+        return jsonify(response)
 
     print("The server has been shut down successfully.")
 
     # the queue is empty
-    return jsonify(
-        {
-            "status": "done",
-        }
-    )
+    response = {
+        "status": "done",
+    }
+
+    webserver.logger.info(f"\"GET /graceful_shutdown\" - \"Responding with: {response}\"")
+    return jsonify(response)
 
 @webserver.route('/')
 @webserver.route('/index')
 def index():
+    webserver.logger.info(f"\"GET /index\"")
     routes = get_defined_routes()
     msg = "Hello, World!\n Interact with the webserver using one of the defined routes:\n"
 
