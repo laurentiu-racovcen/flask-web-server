@@ -59,7 +59,6 @@ class TaskRunner(Thread):
     def mark_job_as_done(self, job_id):
         with self.thread_pool.jobs_lock:
             self.thread_pool.jobs[job_id] = JobStatus.DONE
-            print(f"\nthread id = {self.thread_id}, finished job {job_id}")
 
     def get_job_output(self, function, job) -> dict:
         job_id = job['job_id']
@@ -86,7 +85,6 @@ class TaskRunner(Thread):
         return result
 
     def execute_job(self, job):
-        # print("thread id = " + str(self.thread_id) + ", started executing the job: " + str(job))
         endpoint = job['endpoint']
 
         if endpoint in ThreadUtils.endpoint_func_map:
@@ -98,7 +96,6 @@ class TaskRunner(Thread):
         }
 
     def run(self):
-        # print("thread id = " + str(self.thread_id) + " has been initialized!")
         while True:
             if not self.thread_pool.shutdown_event.is_set():
                 if not self.thread_pool.jobs_queue.empty():
@@ -119,7 +116,6 @@ class TaskRunner(Thread):
                 if self.thread_pool.jobs_queue.empty():
                     # "shutdown_event" has been set and the jobs queue is empty,
                     # exit the while loop
-                    print("thread id = " + str(self.thread_id) + ", finished the execution.")
                     break
 
         # finish thread execution

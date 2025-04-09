@@ -25,8 +25,6 @@ def states_mean(question, entries):
         state_result = state_mean(question, state, entries)
         results_dict.update(state_result)
 
-    print(dict(sorted(results_dict.items(), key = lambda item : item[1])))
-
     # return sorted results in ascending oreder by values
     return dict(sorted(results_dict.items(), key = lambda item : item[1]))
 
@@ -150,25 +148,25 @@ def state_mean_by_category(question, state, entries):
     return {state: strat_cat_results}
 
 def mean_by_category(question, entries):
-        states = get_question_states(question, entries)
-        results_dict = {}
+    states = get_question_states(question, entries)
+    results_dict = {}
 
-        for state in states:
-            results = state_mean_by_category(question, state, entries)
+    for state in states:
+        results = state_mean_by_category(question, state, entries)
 
-            # extract all the state results dictionary entries
-            state_results = results[state]
+        # extract all the state results dictionary entries
+        state_results = results[state]
 
-            # extract the keys (category + stratification) of all the dictionary entries
-            keys = state_results.keys()
+        # extract the keys (category + stratification) of all the dictionary entries
+        keys = state_results.keys()
 
-            for key in keys:
-                value = state_results[key]
-                new_key = "('" + state + "', " + key[1:]
-                results_dict.update({new_key: value})
+        for key in keys:
+            value = state_results[key]
+            new_key = "('" + state + "', " + key[1:]
+            results_dict.update({new_key: value})
 
-        # return sorted results in ascending order by state name
-        return dict(sorted(results_dict.items()))
+    # return sorted results in ascending order by state name
+    return dict(sorted(results_dict.items()))
 
 class ThreadUtils():
     endpoint_func_map = {

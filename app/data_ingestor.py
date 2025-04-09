@@ -32,10 +32,19 @@ class DataIngestor:
         self.__csv_file = pandas.read_csv(csv_path)
 
     def get_csv_file(self):
+        '''
+        Returns the csv file contents
+        '''
         return self.__csv_file
 
     def get_questions_best_is_max(self):
+        '''
+        Returns "questions_best_is_max" list contents
+        '''
         return self.__questions_best_is_max
 
     def get_questions_best_is_min(self):
+        '''
+        Returns "questions_best_is_min" list contents
+        '''
         return self.__questions_best_is_min
