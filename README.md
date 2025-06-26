@@ -1,106 +1,154 @@
-Name: Racovcen Laurențiu
+# **Flask Web Server: Health Data Analysis API**
 
-Group: 334CD
+> This project implements a Flask-based web server that exposes REST API endpoints for analyzing health-related data. The server processes concurrent requests using a thread pool, executes data analysis tasks, and returns results. Users interact via HTTP requests to endpoints like `/api/states_mean`, `/api/state_mean`, etc.
 
-# Homework 1
+## **Table of Contents**
 
-## Explanation of the chosen solution
+1. [Overview](#overview)
+2. [Key Components](#key-components)
+3. [API Endpoints](#api-endpoints)
+4. [Implementation Details](#implementation-details)
+5. [Special Cases \& Error Handling](#special-cases--error-handling)
+6. [Resources](#resources)
 
-* The chosen solution implements a Flask-based web server that exposes an API for performing various analyses on health-related data. The `__init__.py` file initializes the Flask application (`webserver`), configures logging, and sets up a thread pool (`ThreadPool`) from `app.task_runner.py` to handle incoming requests concurrently. The `DataIngestor` class in `data_ingestor.py` is responsible for reading and providing access to the data from a CSV file. API endpoints are defined in `routes.py`, which receive requests, enqueue jobs for the thread pool, and return results or job statuses. The actual data analysis logic is implemented in the functions within `thread_utils.py`. Each request triggers a job that is placed in the `ThreadPool`'s queue. Worker threads (`TaskRunner`) pick up these jobs, execute the corresponding analysis function, and store the results as JSON files in the `results` directory. The general approach is to separate the web server logic (handling requests and responses) from the data processing logic (data ingestion and analysis) using a thread pool for concurrency.
+## **Overview**
 
-    ```python
-    # Example from "__init__.py" showing Flask app and ThreadPool initialization
-    from flask import Flask
-    from app.task_runner import ThreadPool
+The solution separates concerns into distinct layers:
 
-    webserver = Flask(__name__)
-    webserver.tasks_runner = ThreadPool()
-    webserver.tasks_runner.start()
-    ```
+- **Web Server**: Handles HTTP requests/responses (Flask)
+- **Concurrency Management**: Thread pool for task processing (`task_runner.py`)
+- **Data Ingestion**: CSV loading and access (`data_ingestor.py`)
+- **Analysis Logic**: Statistical computations (`thread_utils.py`)
 
-    ```python
-    # Example from "data_ingestor.py" showing data loading
-    import pandas
+## **Key Components**
 
-    class DataIngestor:
-        def __init__(self, csv_path: str):
-            self.__csv_file = pandas.read_csv(csv_path)
-    ```
+### **`__init__.py`**
 
-    ```python
-    # Example from "routes.py" showing API endpoint definition
-    from flask import request, jsonify
-    from app import webserver
+Initializes the Flask application and thread pool:
 
-    @webserver.route('/api/states_mean', methods=['POST'])
-    def states_mean_request():
-        if not "question" in request.json:
-            return missing_question_message("states_mean")
-        return process_post_request("states_mean", request.json)
-    ```
+```python
+from flask import Flask
+from app.task_runner import ThreadPool
 
-    ```python
-    # Example from "task_runner.py" showing job execution
-    class TaskRunner(Thread):
-        # ...
-        def execute_job(self, job):
-            endpoint = job['endpoint']
-            if endpoint in ThreadUtils.endpoint_func_map:
-                return self.get_job_output(ThreadUtils.endpoint_func_map[endpoint], job)
-            return {
-                "status": "error",
-                "reason": "No such endpoint"
-            }
-    ```
+webserver = Flask(__name__)
+webserver.tasks_runner = ThreadPool()
+webserver.tasks_runner.start()
+```
 
-    ```python
-    # Example from "thread_utils.py" showing a data analysis function
-    def states_mean(question, entries):
-        # ... logic to calculate the mean for each state ...
+
+### **`data_ingestor.py`**
+
+Loads and provides access to CSV data using Pandas:
+
+```python
+import pandas
+
+class DataIngestor:
+    def __init__(self, csv_path: str):
+        self.__csv_file = pandas.read_csv(csv_path)
+```
+
+
+### **`routes.py`**
+
+Defines API endpoints and request validation:
+
+```python
+@webserver.route('/api/states_mean', methods=['POST'])
+def states_mean_request():
+    if not "question" in request.json:
+        return missing_question_message("states_mean")
+    return process_post_request("states_mean", request.json)
+```
+
+
+### **`task_runner.py`**
+
+Manages job execution with worker threads:
+
+```python
+class TaskRunner(Thread):
+    def execute_job(self, job):
+        endpoint = job['endpoint']
+        if endpoint in ThreadUtils.endpoint_func_map:
+            return self.get_job_output(ThreadUtils.endpoint_func_map[endpoint], job)
+        return {
+            "status": "error",
+            "reason": "No such endpoint"
+        }
+```
+
+
+### **`thread_utils.py`**
+
+Contains core analysis logic:
+
+```python
+def states_mean(question, entries):
+        # logic to calculate the mean for each state ...
         return dict(sorted(results_dict.items(), key = lambda item : item[1]))
-    ```
+```
 
-* **Do you find the homework useful?**
 
-Yes, I've gotten hands-on practice with building a web server using Flask. Understanding how to design and implement the different API endpoints and connect them to the data analysis functions has really improved my understanding of backend development.
+## **API Endpoints**
 
-* **Do you find the implementation naive, effective, could have been better?**
+All endpoints accept `POST` requests with JSON payloads.
 
-I find the implementation reasonably effective for handling a moderate number of concurrent requests. The current implementation uses file-based storage for results, which is simple but might become inefficient for a large number of jobs. A more robust solution could involve using a database.
 
-***Special case:***
+| Endpoint | Required Parameters | Description |
+| :-- | :-- | :-- |
+| `/api/states_mean` | `{"question": string}` | Mean results across all states |
+| `/api/state_mean` | `{"question": string, "state": string}` | Mean for specific state |
+| `/api/best5` | `{"question": string}` | Top 5 best-performing states |
+| `/api/worst5` | `{"question": string}` | Bottom 5 worst-performing states |
+| `/api/global_mean` | `{"question": string}` | Global mean across all data |
+| `/api/diff_from_mean` | `{"question": string}` | Deviation from global mean |
+| `/api/state_diff_from_mean` | `{"question": string, "state": string}` | State-specific deviation |
+| `/api/mean_by_category` | `{"question": string}` | Mean grouped by category |
+| `/api/state_mean_by_category` | `{"question": string, "state": string}` | State mean grouped by category |
 
-* The implementation handles cases where required parameters (like 'question' or 'state') are missing in the request JSON, returning appropriate error messages.
-* Exceptions handling.
+## **Implementation Details**
 
-Implementation
--
+### **Concurrency Model**
 
-* **Specify whether the entire homework statement is implemented:**
+- Uses `ThreadPool` with configurable worker threads
+- Jobs are queued and executed asynchronously
+- Results stored as JSON files in `/results` directory
 
-Yes, the entire homework statement is implemented.
 
-* **Interesting things discovered along the way:**
+### **Data Flow**
 
-    - How quickly and easily web APIs can be built using the Flask framework in Python.
-    - The role of logging in a server application.
-    - The clear separation of concerns between the web server, task management, data ingestion, and data analysis logic. This modular design makes the codebase more organized and easier to maintain.
+1. Request received by Flask endpoint
+2. Job enqueued in thread pool
+3. Worker thread:
+    - Fetches data via `DataIngestor`
+    - Executes analysis function from `thread_utils.py`
+4. Results serialized to JSON and returned
 
-Resources used
--
+### **Validation**
 
-https://ocw.cs.pub.ro/courses/asc/laboratoare/02
+- Input validation handled in `routes.py`
+- Error responses for missing parameters (HTTP 400)
+- Endpoint existence checking in `TaskRunner`
 
-https://ocw.cs.pub.ro/courses/asc/laboratoare/03
 
-https://flask.palletsprojects.com/en/stable/quickstart/#routing
+## **Special Cases & Error Handling**
 
-https://pandas.pydata.org/docs/reference/api/pandas.read_csv.html
+| Scenario | Response |
+| :-- | :-- |
+| Missing `question` parameter | `{"error": "Missing 'question'"}, 400` |
+| Invalid endpoint | `{"status": "error", "reason": "Invalid endpoint"}` |
+| Data processing errors | Logged with traceback; HTTP 500 response |
 
-https://docs.python.org/3/library/unittest.htm
+**Exception Handling:**
 
-https://docs.python.org/3/library/logging.html
+- All analysis functions include `try/except` blocks
+- Server logs errors with full stack traces for debugging
 
-Git
--
-1. Link to the repo: https://github.com/laurentiu-racovcen/ASC-HW1
+
+## **Resources**
+
+- [Flask Quickstart](https://flask.palletsprojects.com/en/stable/quickstart/#routing)
+- [Pandas Documentation](https://pandas.pydata.org/docs/reference/api/pandas.read_csv.html)
+- [Python Threading](https://docs.python.org/3/library/threading.html)
+
